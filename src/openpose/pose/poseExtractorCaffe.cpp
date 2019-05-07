@@ -1,5 +1,8 @@
 #include <limits> // std::numeric_limits
 #include <openpose/gpu/cuda.hpp>
+#ifdef USE_CUDA
+    #include <openpose/gpu/cuda.hu>
+#endif
 #include <openpose/pose/poseParameters.hpp>
 #include <openpose/utilities/check.hpp>
 #include <openpose/utilities/fastMath.hpp>
@@ -205,6 +208,12 @@ namespace op
             #ifdef USE_CAFFE
 if (!Profiler::sRunningModeSleep)
 {
+                // const auto REPS = 1;
+                // double timeNormalize1 = 0.;
+                // double timeNormalize2 = 0.;
+                // double timeNormalize3 = 0.;
+                // double timeNormalize4 = 0.;
+                // OP_CUDA_PROFILE_INIT(REPS);
                 // Sanity checks
                 if (inputNetData.empty())
                     error("Empty inputNetData.", __LINE__, __FUNCTION__, __FILE__);
@@ -281,6 +290,8 @@ if (!Profiler::sRunningModeSleep)
                             positiveIntRound(ratio*mNetInput4DSizes[0][3]),
                             positiveIntRound(ratio*mNetInput4DSizes[0][2])};
                 }
+                // OP_CUDA_PROFILE_END(timeNormalize1, 1e3, REPS);
+                // OP_CUDA_PROFILE_INIT(REPS);
                 // 2. Resize heat maps + merge different scales
                 // ~5ms (GPU) / ~20ms (CPU)
                 const auto caffeNetOutputBlobs = arraySharedToPtr(spCaffeNetOutputBlobs);
@@ -297,12 +308,16 @@ if (!Profiler::sRunningModeSleep)
                 // mScaleNetToOutput = 1.f;
                 // 3. Get peaks by Non-Maximum Suppression
                 // ~2ms (GPU) / ~7ms (CPU)
+                // OP_CUDA_PROFILE_END(timeNormalize2, 1e3, REPS);
                 const auto nmsThreshold = (float)get(PoseProperty::NMSThreshold);
-                spNmsCaffe->setThreshold(nmsThreshold);
                 const auto nmsOffset = float(0.5/double(mScaleNetToOutput));
+                // OP_CUDA_PROFILE_INIT(REPS);
+                spNmsCaffe->setThreshold(nmsThreshold);
                 spNmsCaffe->setOffset(Point<float>{nmsOffset, nmsOffset});
                 spNmsCaffe->Forward({spHeatMapsBlob.get()}, {spPeaksBlob.get()});
                 // 4. Connecting body parts
+                // OP_CUDA_PROFILE_END(timeNormalize3, 1e3, REPS);
+                // OP_CUDA_PROFILE_INIT(REPS);
                 spBodyPartConnectorCaffe->setScaleNetToOutput(mScaleNetToOutput);
                 spBodyPartConnectorCaffe->setInterMinAboveThreshold(
                     (float)get(PoseProperty::ConnectInterMinAboveThreshold));
@@ -312,6 +327,11 @@ if (!Profiler::sRunningModeSleep)
                 // Note: BODY_25D will crash (only implemented for CPU version)
                 spBodyPartConnectorCaffe->Forward(
                     {spHeatMapsBlob.get(), spPeaksBlob.get()}, mPoseKeypoints, mPoseScores);
+                // OP_CUDA_PROFILE_END(timeNormalize4, 1e3, REPS);
+                // log("1 = " + std::to_string(timeNormalize1) + " msecs.");
+                // log("2 = " + std::to_string(timeNormalize2) + " msecs.");
+                // log("3 = " + std::to_string(timeNormalize3) + " msecs.");
+                // log("4 = " + std::to_string(timeNormalize4) + " msecs.");
                 // Re-run on each person
                 if (TOP_DOWN_REFINEMENT)
                 {
